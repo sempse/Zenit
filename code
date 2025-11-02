@@ -1,0 +1,247 @@
+#include <Servo.h>
+#include <IRremote.h>
+#include <C:\Users\mwesi\Downloads\Arduino_Uno_Super_Starter_Kit_IR_Remote_Control\Arduino_Uno_Super_Starter_Kit_IR_Remote_Control\IR.h> 
+
+// Servos
+Servo servoH;  // horizontal (pin 4)
+Servo servoV;  // vertical   (pin 12)
+
+// Positions and states
+int posH = 90;     // start centered
+int posV = 90;
+int stateH = 0;    // -1 = left, 0 = stop, +1 = right
+int stateV = 0;    // -1 = down, 0 = stop, +1 = up
+
+// Motion tuning
+int stepSize = 1;       // degrees per tick
+unsigned long lastMove = 0;
+unsigned long moveIntervalMs = 15;  
+
+// ---- Discrete positions (6 steps from 0..180) ----
+int posList[6] = {0, 36, 72, 108, 144, 180};
+int hIdx = 2;  // start near center (72°)
+int vIdx = 2;
+
+//L298N: Front Left Motor 
+#define in1 6
+#define in2 7
+
+//L298N: Front Left Motor
+#define in3 9
+#define in4 8
+
+//Back motors (continuous-rotation servos)
+const int leftBackPin  = 2;  // Left Back Motor
+const int rightBackPin = 3;  // Right Back Motor
+Servo leftBack;
+Servo rightBack;
+
+// IR
+IRrecv irrecv(RECEIVER);
+decode_results results;
+unsigned long lastCode = 0;
+
+// Simple pulses for servos
+int reversePulse = 1300;
+int stopPulse    = 1500; // neutral
+int forwardPulse = 1700; // forward //More Power - 2000
+
+void setup() {
+  Serial.begin(9600);
+  Serial.println("IR Receiver Button Decode");
+
+  //Servo
+  servoH.attach(4);
+  servoV.attach(12);
+
+  servoH.write(posList[hIdx]);
+  servoV.write(posList[vIdx]);
+
+  // IR
+  irrecv.enableIRIn();
+
+  // L298N direction pins
+  pinMode(in1, OUTPUT);
+  pinMode(in2, OUTPUT);
+  pinMode(in3, OUTPUT);
+  pinMode(in4, OUTPUT);
+
+  // Start front-left stopped 
+  digitalWrite(in1, LOW);
+  digitalWrite(in2, LOW);
+
+  // Start front-right stopped 
+  digitalWrite(in3, LOW);
+  digitalWrite(in4, LOW);
+
+  // Back motors
+  leftBack.attach(leftBackPin);
+  rightBack.attach(rightBackPin);
+  leftBack.writeMicroseconds(stopPulse);
+  rightBack.writeMicroseconds(stopPulse);
+
+  pinMode(13, OUTPUT);      // status LED
+  digitalWrite(13, LOW);
+}
+
+void loop() {
+  if (irrecv.decode(&results)) {
+    unsigned long raw = results.value;     //assigned for listing through for the servo
+    unsigned long code = raw;
+
+    // Handle key hold/repeat
+    if (code == KEY_REPEAT) {
+      code = lastCode;
+    } else {
+      lastCode = code;
+    }
+
+    bool doStep = (raw != KEY_REPEAT);
+
+
+    // -------- Controls --------
+    //Servo
+    // Horizontal step with FAST FORWARD / FAST BACK
+    if (doStep && code == KEY_FAST_FORWARD) {     // next (right)
+      if (hIdx < 5) {
+        hIdx = hIdx + 1;
+      }
+    }
+    if (doStep && code == KEY_FAST_BACK) {        // prev (left)
+      if (hIdx > 0) {
+        hIdx = hIdx - 1;
+      }
+    }
+
+    // Vertical step with UP / DOWN
+    if (doStep && code == KEY_UP) {               // next (up)
+      if (vIdx < 5) {
+        vIdx = vIdx + 1;
+      }
+    }
+    if (doStep && code == KEY_DOWN) {             // prev (down)
+      if (vIdx > 0) {
+        vIdx = vIdx - 1;
+      }
+    }
+
+    // Direct min/max shortcuts
+    if (doStep && code == KEY_6) {                // vertical min
+      vIdx = 0;
+    }
+    if (doStep && code == KEY_7) {                // vertical max
+      vIdx = 5;
+    }
+    if (doStep && code == KEY_8) {                // horizontal min
+      hIdx = 0;
+    }
+    if (doStep && code == KEY_9) {                // horizontal max
+      hIdx = 5;
+    }
+
+    // PAUSE: keep current positions 
+    if (doStep && code == KEY_PAUSE) {
+      // do nothing
+    }
+
+    
+    if (doStep &&
+        (code == KEY_FAST_FORWARD || code == KEY_FAST_BACK ||
+         code == KEY_UP || code == KEY_DOWN ||
+         code == KEY_6 || code == KEY_7 || code == KEY_8 || code == KEY_9)) {
+
+      posH = posList[hIdx];
+      posV = posList[vIdx];
+      servoH.write(posH);
+      servoV.write(posV);
+    }
+
+    // VOL- : all motors reverse (front-left and right + both backs)
+    if (code == KEY_VOL_DE) {
+      // Front-left and right (L298N) reverse: IN1=LOW, IN2=HIGH
+      digitalWrite(in1, LOW);
+      digitalWrite(in2, HIGH);
+
+      digitalWrite(in3, LOW);
+      digitalWrite(in4, HIGH);
+
+      // Back motors reverse
+      leftBack.writeMicroseconds(reversePulse);
+      rightBack.writeMicroseconds(reversePulse);
+
+      digitalWrite(13, HIGH);
+    }
+
+
+    // VOL+ : all motors forward (front-left and right + both backs)
+    if (code == KEY_VOL_ADD) {
+      // Front-left and right (L298N) forward: IN1=HIGH, IN2=LOW
+      digitalWrite(in1, HIGH);
+      digitalWrite(in2, LOW);
+
+      digitalWrite(in3, HIGH);
+      digitalWrite(in4, LOW);
+
+      // Back motors forward
+      leftBack.writeMicroseconds(forwardPulse);
+      rightBack.writeMicroseconds(forwardPulse);
+
+      digitalWrite(13, HIGH);
+    }
+
+    // 1 : right side only (right-back). Front-right not defined, so ignored.
+    if (code == KEY_1) {
+      // Stop front-left
+      digitalWrite(in1, LOW);
+      digitalWrite(in2, LOW);
+
+      //Right front forward
+      digitalWrite(in3, HIGH);
+      digitalWrite(in4, LOW);
+
+      // Left-back stop, Right-back forward
+      leftBack.writeMicroseconds(stopPulse);
+      rightBack.writeMicroseconds(forwardPulse);
+
+      digitalWrite(13, HIGH);
+    }
+
+    // 2 : left side (front-left + left-back)
+    if (code == KEY_2) {
+      // Stop front-right
+      digitalWrite(in3, LOW);
+      digitalWrite(in4, LOW);
+
+
+      // Front-left forward
+      digitalWrite(in1, HIGH);
+      digitalWrite(in2, LOW);
+
+      // Left-back forward, Right-back stop
+      leftBack.writeMicroseconds(forwardPulse);
+      rightBack.writeMicroseconds(stopPulse);
+
+      digitalWrite(13, HIGH);
+    }
+
+    // 3 : stop everything
+    if (code == KEY_3) {
+      // Front-left stop 
+      digitalWrite(in1, LOW);
+      digitalWrite(in2, LOW);
+
+      // Stop front-right
+      digitalWrite(in3, LOW);
+      digitalWrite(in4, LOW);
+
+      // Back motors neutral
+      leftBack.writeMicroseconds(stopPulse);
+      rightBack.writeMicroseconds(stopPulse);
+
+      digitalWrite(13, LOW);
+    }
+
+    irrecv.resume(); 
+  }
+
+}
