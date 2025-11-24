@@ -1,6 +1,6 @@
 #include <Servo.h>
 #include <IRremote.h>
-#include <C:\Users\mwesi\Downloads\Arduino_Uno_Super_Starter_Kit_IR_Remote_Control\Arduino_Uno_Super_Starter_Kit_IR_Remote_Control\IR.h> 
+#include Arduino_Uno_Super_Starter_Kit_IR_Remote_Control\Arduino_Uno_Super_Starter_Kit_IR_Remote_Control\IR.h> 
 
 // Servos
 Servo servoH;  // horizontal (pin 4)
